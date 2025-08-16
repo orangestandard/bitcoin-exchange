@@ -1,0 +1,138 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String   @map("password_hash")
+  firstName     String?  @map("first_name")
+  lastName      String?  @map("last_name")
+  isVerified    Boolean  @default(false) @map("is_verified")
+  verificationToken String? @map("verification_token")
+  resetToken    String?  @map("reset_token")
+  resetTokenExpiry DateTime? @map("reset_token_expiry")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  
+  wallet       Wallet?
+  transactions Transaction[]
+  orders       Order[]
+  
+  @@map("users")
+}
+
+model Wallet {
+  id                String   @id @default(cuid())
+  userId            String   @unique @map("user_id")
+  address           String   @unique
+  privateKeyEncrypted String @map("private_key_encrypted")
+  publicKey         String   @map("public_key")
+  mnemonic          String?  // Encrypted HD wallet seed
+  balanceBtc        Decimal  @default(0) @map("balance_btc") @db.Decimal(18, 8)
+  balanceUsd        Decimal  @default(0) @map("balance_usd") @db.Decimal(18, 2)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  
+  user             User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("wallets")
+}
+
+model Transaction {
+  id            String            @id @default(cuid())
+  userId        String?           @map("user_id")
+  type          TransactionType
+  amountBtc     Decimal           @map("amount_btc") @db.Decimal(18, 8)
+  amountUsd     Decimal           @map("amount_usd") @db.Decimal(18, 2)
+  fee           Decimal           @default(0) @db.Decimal(18, 8)
+  status        TransactionStatus @default(PENDING)
+  txHash        String?           @map("tx_hash")
+  fromAddress   String?           @map("from_address")
+  toAddress     String?           @map("to_address")
+  confirmations Int               @default(0)
+  description   String?
+  guestEmail    String?           @map("guest_email") // For guest transactions
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+  
+  user         User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  @@map("transactions")
+}
+
+model Order {
+  id          String      @id @default(cuid())
+  userId      String      @map("user_id")
+  type        OrderType
+  amountBtc   Decimal     @map("amount_btc") @db.Decimal(18, 8)
+  amountUsd   Decimal     @map("amount_usd") @db.Decimal(18, 2)
+  price       Decimal     @db.Decimal(18, 2)
+  status      OrderStatus @default(PENDING)
+  createdAt   DateTime    @default(now()) @map("created_at")
+  completedAt DateTime?   @map("completed_at")
+  
+  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("orders")
+}
+
+model PriceHistory {
+  id        String   @id @default(cuid())
+  priceUsd  Decimal  @map("price_usd") @db.Decimal(18, 2)
+  source    String   @default("coinbase")
+  timestamp DateTime @default(now())
+  
+  @@map("price_history")
+  @@index([timestamp])
+}
+
+model GuestPurchase {
+  id            String   @id @default(cuid())
+  email         String
+  amountBtc     Decimal  @map("amount_btc") @db.Decimal(18, 8)
+  amountUsd     Decimal  @map("amount_usd") @db.Decimal(18, 2)
+  walletAddress String   @map("wallet_address")
+  privateKeyEncrypted String @map("private_key_encrypted")
+  txHash        String?  @map("tx_hash")
+  isConverted   Boolean  @default(false) @map("is_converted")
+  convertedUserId String? @map("converted_user_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+  
+  @@map("guest_purchases")
+}
+
+enum TransactionType {
+  BUY
+  SELL
+  SEND
+  RECEIVE
+  GUEST_BUY
+}
+
+enum TransactionStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+  CANCELLED
+}
+
+enum OrderType {
+  BUY
+  SELL
+}
+
+enum OrderStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+  FAILED
+}
