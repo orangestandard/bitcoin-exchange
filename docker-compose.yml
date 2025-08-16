@@ -1,0 +1,106 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: bitcoin-exchange-postgres
+    environment:
+      POSTGRES_DB: bitcoin_exchange
+      POSTGRES_USER: bitcoin_user
+      POSTGRES_PASSWORD: bitcoin_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - bitcoin-exchange-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bitcoin_user -d bitcoin_exchange"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: bitcoin-exchange-backend
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://bitcoin_user:bitcoin_password@postgres:5432/bitcoin_exchange
+      JWT_SECRET: your-super-secret-jwt-key-change-in-production
+      JWT_REFRESH_SECRET: your-super-secret-refresh-key-change-in-production
+      PORT: 3001
+      BITCOIN_NETWORK: testnet
+      ENCRYPTION_KEY: your-32-character-encryption-key-here
+      CORS_ORIGIN: http://localhost:3000
+      RATE_LIMIT_WINDOW_MS: 900000
+      RATE_LIMIT_MAX_REQUESTS: 100
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - bitcoin-exchange-network
+    volumes:
+      - ./backend/logs:/app/logs
+    restart: unless-stopped
+
+  # Frontend Application
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: http://localhost:3001/api
+        VITE_WS_URL: ws://localhost:3001/ws
+    container_name: bitcoin-exchange-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - bitcoin-exchange-network
+    restart: unless-stopped
+
+  # Redis (for future caching and session storage)
+  redis:
+    image: redis:7-alpine
+    container_name: bitcoin-exchange-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - bitcoin-exchange-network
+    restart: unless-stopped
+
+  # Nginx (reverse proxy)
+  nginx:
+    image: nginx:alpine
+    container_name: bitcoin-exchange-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/ssl/certs:ro
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - bitcoin-exchange-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  bitcoin-exchange-network:
+    driver: bridge
